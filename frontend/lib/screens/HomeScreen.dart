@@ -36,7 +36,7 @@ class HomeScreen extends StatelessWidget {
                   style: TextStyle(fontSize: 18, color: Colors.white),
                 ),
                 const SizedBox(height: 50),
-                Image.asset('assets/images/medical_app.png', height: 200),
+                Image.asset('assets/images/logo.png', height: 200),
                 const SizedBox(height: 50),
                 const Text(
                   'Fonctionnalités:',
