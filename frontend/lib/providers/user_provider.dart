@@ -10,8 +10,14 @@ class UserProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
 
   Future<void> fetchUser(String token) async {
+    // Ne pas notifier si déjà en chargement
+    if (_isLoading) return;
+    
     _isLoading = true;
-    notifyListeners();
+    // Planifier la notification après le frame courant
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
 
     try {
       final authService = AuthService();
@@ -27,6 +33,8 @@ class UserProvider with ChangeNotifier {
 
   void clearUser() {
     _user = null;
-    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
   }
 }

@@ -1,6 +1,6 @@
-// ... (autres imports)
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/providers/clinical_data_provider.dart';
 import 'package:frontend/providers/user_provider.dart';
 import 'package:frontend/screens/HomeScreen.dart';
 import 'package:frontend/screens/appointments/appointments_screen.dart';
@@ -11,6 +11,7 @@ import 'package:frontend/screens/dashboard/dashboard_screen.dart';
 import 'package:frontend/screens/medical_tests/medical_tests_screen.dart';
 import 'package:frontend/screens/medications/medications_screen.dart';
 import 'package:frontend/screens/profile/profile_screen.dart';
+import 'package:frontend/services/clinical_data_service.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -26,6 +27,12 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
+          ChangeNotifierProxyProvider<AuthProvider, ClinicalDataProvider>(
+          create: (ctx) => ClinicalDataProvider(ClinicalDataService('')),
+          update: (ctx, auth, previous) => ClinicalDataProvider(
+            ClinicalDataService(auth.token ?? ''),
+          ),
+        ),
       ],
       child: MaterialApp(
         title: 'MEDLINK',

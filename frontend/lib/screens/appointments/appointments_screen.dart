@@ -1,12 +1,11 @@
-import 'package:flutter/material.dart' hide ErrorWidget;
-import 'package:frontend/screens/appointments/add_appointment_screen.dart';
-import 'package:frontend/services/appointment_service.dart';
-import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/material.dart';
 import 'package:frontend/models/appointment.dart';
 import 'package:frontend/providers/auth_provider.dart';
-import 'package:frontend/widgets/error_widget.dart';
-import 'package:frontend/widgets/loading_widget.dart';
+import 'package:frontend/screens/appointments/add_appointment_screen.dart';
+import 'package:frontend/services/appointment_service.dart';
+import 'package:frontend/widgets/appointment_tile.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 class AppointmentsScreen extends StatefulWidget {
   const AppointmentsScreen({Key? key}) : super(key: key);
@@ -15,131 +14,138 @@ class AppointmentsScreen extends StatefulWidget {
   _AppointmentsScreenState createState() => _AppointmentsScreenState();
 }
 
-class _AppointmentsScreenState extends State<AppointmentsScreen> {
+class _AppointmentsScreenState extends State<AppointmentsScreen> 
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   late Future<List<Appointment>> _appointmentsFuture;
   late Future<List<Appointment>> _upcomingAppointmentsFuture;
+  final GlobalKey<RefreshIndicatorState> _refreshKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadAppointments();
   }
 
   void _loadAppointments() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final appointmentService = AppointmentService(authProvider.token!);
-    _appointmentsFuture = appointmentService.getAppointments();
-    _upcomingAppointmentsFuture = appointmentService.getUpcomingAppointments();
+    setState(() {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final service = AppointmentService(authProvider.token!);
+      _appointmentsFuture = service.getAppointments();
+      _upcomingAppointmentsFuture = service.getUpcomingAppointments();
+    });
+  }
+
+  Future<void> _handleAddAppointment() async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const AddAppointmentScreen()),
+    );
+    if (result == true) _refreshKey.currentState?.show();
   }
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Rendez-vous'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'À venir'),
-              Tab(text: 'Tous'),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AddAppointmentScreen(),
-                  ),
-                );
-                _loadAppointments();
-              },
-            ),
-          ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Rendez-vous'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [Tab(text: 'À venir'), Tab(text: 'Tous')],
         ),
-        body: TabBarView(
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _handleAddAppointment,
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadAppointments,
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        key: _refreshKey,
+        onRefresh: () async => _loadAppointments(),
+        child: TabBarView(
+          controller: _tabController,
           children: [
-            FutureBuilder<List<Appointment>>(
-              future: _upcomingAppointmentsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const LoadingWidget();
-                } else if (snapshot.hasError) {
-                  return ErrorWidget(
-                    message: snapshot.error.toString(),
-                    onRetry: _loadAppointments,
-                  );
-                } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const ErrorWidget(message: 'Aucun rendez-vous à venir');
-                }
-
-                return _buildAppointmentsList(snapshot.data!);
-              },
-            ),
-            FutureBuilder<List<Appointment>>(
-              future: _appointmentsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const LoadingWidget();
-                } else if (snapshot.hasError) {
-                  return ErrorWidget(
-                    message: snapshot.error.toString(),
-                    onRetry: _loadAppointments,
-                  );
-                } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const ErrorWidget(message: 'Aucun rendez-vous trouvé');
-                }
-
-                return _buildAppointmentsList(snapshot.data!);
-              },
-            ),
+            _buildAppointmentsList(_upcomingAppointmentsFuture),
+            _buildAppointmentsList(_appointmentsFuture),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAppointmentsList(List<Appointment> appointments) {
-    return ListView.builder(
-      itemCount: appointments.length,
-      itemBuilder: (context, index) {
-        final appointment = appointments[index];
-        return Card(
-          margin: const EdgeInsets.all(8.0),
-          child: ListTile(
-            title: Text(appointment.title),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(appointment.description),
-                Text(DateFormat('dd/MM/yyyy HH:mm').format(appointment.appointmentDate)),
-                if (appointment.reminderSet)
-                  const Text('Rappel activé', style: TextStyle(color: Colors.green)),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () async {
-                    // Implement edit functionality
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () async {
-                    // Implement delete functionality
-                  },
-                ),
-              ],
-            ),
+  Widget _buildAppointmentsList(Future<List<Appointment>> future) {
+    return FutureBuilder<List<Appointment>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Center(child: Text('Erreur: ${snapshot.error}'));
+        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Center(child: Text('Aucun rendez-vous trouvé'));
+        }
+
+        return ListView.builder(
+          itemCount: snapshot.data!.length,
+          itemBuilder: (_, index) => AppointmentTile(
+            appointment: snapshot.data![index],
+            onEdit: () => _handleEditAppointment(snapshot.data![index]),
+            onDelete: () => _handleDeleteAppointment(snapshot.data![index].id),
           ),
         );
       },
     );
+  }
+
+  Future<void> _handleEditAppointment(Appointment appointment) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddAppointmentScreen(appointment: appointment),
+      ),
+    );
+    if (result == true) _loadAppointments();
+  }
+
+  Future<void> _handleDeleteAppointment(int id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Confirmer'),
+        content: const Text('Supprimer ce rendez-vous ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Non'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Oui', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final service = AppointmentService(authProvider.token!);
+        await service.deleteAppointment(id);
+        _loadAppointments();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rendez-vous supprimé !')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e')),
+        );
+      }
+    }
   }
 }

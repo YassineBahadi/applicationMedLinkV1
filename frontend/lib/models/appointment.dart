@@ -15,11 +15,11 @@ class Appointment {
 
   factory Appointment.fromJson(Map<String, dynamic> json) {
     return Appointment(
-      id: json['id'],
-      title: json['title'],
-      description: json['description'],
-      appointmentDate: DateTime.parse(json['appointmentDate']),
-      reminderSet: json['reminderSet'],
+      id: json['id'] as int,
+      title: json['title'] as String,
+      description: json['description'] as String,
+      appointmentDate: DateTime.parse(json['appointmentDate'] as String),
+      reminderSet: json['reminderSet'] as bool,
     );
   }
 
@@ -31,4 +31,23 @@ class Appointment {
       'reminderSet': reminderSet,
     };
   }
+
+  Appointment copyWith({
+    int? id,
+    String? title,
+    String? description,
+    DateTime? appointmentDate,
+    bool? reminderSet,
+  }) {
+    return Appointment(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      appointmentDate: appointmentDate ?? this.appointmentDate,
+      reminderSet: reminderSet ?? this.reminderSet,
+    );
+  }
+
+  @override
+  String toString() => 'Appointment($title, $appointmentDate)';
 }

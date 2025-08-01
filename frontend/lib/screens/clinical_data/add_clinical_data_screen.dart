@@ -1,22 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:frontend/models/clinical_data.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/clinical_data_service.dart';
-import 'package:provider/provider.dart';
+import 'package:frontend/utils/validators.dart';
 
-class AddClinicalDataScreen extends StatefulWidget {
-  const AddClinicalDataScreen({Key? key}) : super(key: key);
+class AddEditClinicalDataScreen extends StatefulWidget {
+  final ClinicalData? clinicalData;
+
+  const AddEditClinicalDataScreen({
+    Key? key,
+    this.clinicalData,
+  }) : super(key: key);
 
   @override
-  _AddClinicalDataScreenState createState() => _AddClinicalDataScreenState();
+  _AddEditClinicalDataScreenState createState() => _AddEditClinicalDataScreenState();
 }
 
-class _AddClinicalDataScreenState extends State<AddClinicalDataScreen> {
+class _AddEditClinicalDataScreenState extends State<AddEditClinicalDataScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _parameterTypeController = TextEditingController();
-  final _valueController = TextEditingController();
-  DateTime _recordedAt = DateTime.now();
+  late final TextEditingController _parameterTypeController;
+  late final TextEditingController _valueController;
+  late DateTime _recordedAt;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _parameterTypeController = TextEditingController();
+    _valueController = TextEditingController();
+    _recordedAt = DateTime.now();
+
+    if (widget.clinicalData != null) {
+      _initializeFormWithData(widget.clinicalData!);
+    }
+  }
+
+  void _initializeFormWithData(ClinicalData data) {
+    _parameterTypeController.text = data.parameterType;
+    _valueController.text = data.value.toString();
+    _recordedAt = data.recordedAt;
+  }
 
   @override
   void dispose() {
@@ -32,11 +57,13 @@ class _AddClinicalDataScreenState extends State<AddClinicalDataScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
     );
+
     if (pickedDate != null) {
       final TimeOfDay? pickedTime = await showTimePicker(
         context: context,
         initialTime: TimeOfDay.fromDateTime(_recordedAt),
       );
+
       if (pickedTime != null) {
         setState(() {
           _recordedAt = DateTime(
@@ -52,34 +79,36 @@ class _AddClinicalDataScreenState extends State<AddClinicalDataScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final clinicalDataService = ClinicalDataService(authProvider.token!);
-
-    final clinicalData = ClinicalData(
-      id: 0,
-      parameterType: _parameterTypeController.text,
-      value: double.parse(_valueController.text),
-      recordedAt: _recordedAt,
-    );
+    setState(() => _isSubmitting = true);
 
     try {
-      await clinicalDataService.addClinicalData(clinicalData);
-      if (mounted) {
-        Navigator.pop(context);
+      final authProvider = context.read<AuthProvider>();
+      final service = ClinicalDataService(authProvider.token!);
+
+      final clinicalData = ClinicalData(
+        id: widget.clinicalData?.id ?? 0,
+        parameterType: _parameterTypeController.text.trim(),
+        value: double.parse(_valueController.text.trim()),
+        recordedAt: _recordedAt,
+      );
+
+      if (widget.clinicalData == null) {
+        await service.addClinicalData(clinicalData);
+      } else {
+        await service.updateClinicalData(clinicalData);
       }
+
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to add clinical data: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: ${e.toString()}')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -87,17 +116,21 @@ class _AddClinicalDataScreenState extends State<AddClinicalDataScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ajouter des données cliniques'),
+        title: Text(widget.clinicalData == null 
+            ? 'Add Clinical Data' 
+            : 'Edit Clinical Data'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Type de paramètre'),
+                value: _parameterTypeController.text.isEmpty 
+                    ? null 
+                    : _parameterTypeController.text,
+                decoration: const InputDecoration(labelText: 'Parameter Type'),
                 items: const [
                   DropdownMenuItem(value: 'Poids', child: Text('Poids (kg)')),
                   DropdownMenuItem(value: 'Tension', child: Text('Tension artérielle')),
@@ -107,38 +140,22 @@ class _AddClinicalDataScreenState extends State<AddClinicalDataScreen> {
                   DropdownMenuItem(value: 'Saturation', child: Text('Saturation (%)')),
                   DropdownMenuItem(value: 'Fréquence cardiaque', child: Text('Fréquence cardiaque (bpm)')),
                 ],
-                onChanged: (value) {
-                  _parameterTypeController.text = value!;
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Veuillez sélectionner un type';
-                  }
-                  return null;
-                },
+                onChanged: (value) => _parameterTypeController.text = value ?? '',
+                validator: Validators.requiredValidator,
               ),
               const SizedBox(height: 20),
               TextFormField(
                 controller: _valueController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Valeur'),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Veuillez entrer une valeur';
-                  }
-                  if (double.tryParse(value) == null) {
-                    return 'Veuillez entrer un nombre valide';
-                  }
-                  return null;
-                },
+                decoration: const InputDecoration(labelText: 'Value'),
+                validator: Validators.numberValidator,
               ),
               const SizedBox(height: 20),
               InkWell(
                 onTap: () => _selectDateTime(context),
                 child: InputDecorator(
-                  decoration: const InputDecoration(labelText: 'Date et heure'),
+                  decoration: const InputDecoration(labelText: 'Date & Time'),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(DateFormat('dd/MM/yyyy HH:mm').format(_recordedAt)),
                       const Icon(Icons.calendar_today),
@@ -148,11 +165,10 @@ class _AddClinicalDataScreenState extends State<AddClinicalDataScreen> {
               ),
               const SizedBox(height: 30),
               ElevatedButton(
-                onPressed: _submit,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                ),
-                child: const Text('Enregistrer'),
+                onPressed: _isSubmitting ? null : _submit,
+                child: _isSubmitting
+                    ? const CircularProgressIndicator()
+                    : Text(widget.clinicalData == null ? 'SAVE' : 'UPDATE'),
               ),
             ],
           ),
